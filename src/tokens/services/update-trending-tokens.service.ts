@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, LessThan, Repository } from 'typeorm';
+import { In, IsNull, LessThan, Repository } from 'typeorm';
 
 import { Token } from '../entities/token.entity';
 import { TokensService } from '../tokens.service';
@@ -8,7 +8,10 @@ import { Transaction } from '@/transactions/entities/transaction.entity';
 import moment from 'moment';
 import { CronExpression } from '@nestjs/schedule';
 import { Cron } from '@nestjs/schedule';
-import { TRENDING_SCORE_CONFIG } from '@/configs';
+import {
+  TRENDING_SCORE_CONFIG,
+  UPDATE_TRENDING_TOKENS_ENABLED,
+} from '@/configs';
 
 @Injectable()
 export class UpdateTrendingTokensService {
@@ -26,14 +29,15 @@ export class UpdateTrendingTokensService {
   }
 
   onModuleInit() {
+    this.fixAllNanTrendingTokens();
     this.updateTrendingTokens();
     this.fixOldTrendingTokens();
   }
 
   isUpdatingTrendingTokens = false;
-  @Cron(CronExpression.EVERY_DAY_AT_10AM)
+  @Cron(CronExpression.EVERY_10_MINUTES)
   async updateTrendingTokens() {
-    if (this.isUpdatingTrendingTokens) {
+    if (this.isUpdatingTrendingTokens || !UPDATE_TRENDING_TOKENS_ENABLED) {
       return;
     }
     this.isUpdatingTrendingTokens = true;
@@ -79,9 +83,9 @@ export class UpdateTrendingTokensService {
   }
 
   isFixingOldTrendingTokens = false;
-  @Cron(CronExpression.EVERY_DAY_AT_10AM)
+  @Cron(CronExpression.EVERY_10_MINUTES)
   async fixOldTrendingTokens() {
-    if (this.isFixingOldTrendingTokens) {
+    if (this.isFixingOldTrendingTokens || !UPDATE_TRENDING_TOKENS_ENABLED) {
       return;
     }
     this.isFixingOldTrendingTokens = true;
@@ -96,7 +100,7 @@ export class UpdateTrendingTokensService {
       order: {
         trending_score_update_at: 'ASC',
       },
-      take: 1000,
+      take: 100,
     });
 
     for (const token of tokens) {
@@ -111,5 +115,19 @@ export class UpdateTrendingTokensService {
       }
     }
     this.isFixingOldTrendingTokens = false;
+  }
+
+  async fixAllNanTrendingTokens() {
+    const tokens = await this.tokensRepository.find({
+      where: {
+        trending_score: 'Nan' as any,
+      },
+    });
+
+    for (const token of tokens) {
+      this.tokensRepository.update(token.sale_address, {
+        trending_score: 0,
+      });
+    }
   }
 }
