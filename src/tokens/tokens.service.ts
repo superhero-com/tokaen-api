@@ -6,7 +6,7 @@ import { In, IsNull, Repository } from 'typeorm';
 import { AePricingService } from '@/ae-pricing/ae-pricing.service';
 import { AeSdkService } from '@/ae/ae-sdk.service';
 import { CommunityFactoryService } from '@/ae/community-factory.service';
-import { ACTIVE_NETWORK } from '@/configs';
+import { ACTIVE_NETWORK, TRENDING_SCORE_CONFIG } from '@/configs';
 import { fetchJson } from '@/utils/common';
 import { ITransaction } from '@/utils/types';
 import { Encoded } from '@aeternity/aepp-sdk';
@@ -22,6 +22,7 @@ import { TokenHolder } from './entities/token-holders.entity';
 import { Token } from './entities/token.entity';
 import { PULL_TOKEN_INFO_QUEUE } from './queues/constants';
 import { TokenWebsocketGateway } from './token-websocket.gateway';
+import { Transaction } from '@/transactions/entities/transaction.entity';
 
 type TokenContracts = {
   instance?: TokenSale;
@@ -29,6 +30,37 @@ type TokenContracts = {
   token?: Token;
   lastUsedAt?: number;
 };
+
+interface TrendingMetrics {
+  uniqueTransactions: number;
+  minUniqueTransactions: number;
+  maxUniqueTransactions: number;
+  investmentVolume: number;
+  minInvestmentVolume: number;
+  maxInvestmentVolume: number;
+  lifetimeMinutes: number;
+  minLifetimeMinutes: number;
+  maxLifetimeMinutes: number;
+
+  tx_normalization: {
+    formula: string;
+    result: number;
+  };
+  volume_normalization: {
+    formula: string;
+    result: number;
+  };
+
+  volume_step_2_normalization: {
+    formula: string;
+    result: number;
+  };
+
+  trending_score: {
+    formula: string;
+    result: number;
+  };
+}
 
 @Injectable()
 export class TokensService {
@@ -41,6 +73,9 @@ export class TokensService {
 
     @InjectRepository(TokenHolder)
     private tokenHoldersRepository: Repository<TokenHolder>,
+
+    @InjectRepository(Transaction)
+    private transactionsRepository: Repository<Transaction>,
 
     private aeSdkService: AeSdkService,
 
@@ -818,5 +853,197 @@ export class TokensService {
       );
       return [];
     }
+  }
+
+  /**
+   * Calculate 24-hour trending metrics for a token
+   */
+  async calculateTokenTrendingMetrics(token: Token): Promise<TrendingMetrics> {
+    const twentyFourHoursAgo = moment().subtract(
+      TRENDING_SCORE_CONFIG.TIME_WINDOW_HOURS,
+      'hours',
+    );
+
+    const [
+      uniqueTransactionsResult,
+      transactionCountsPerToken,
+      volumePerToken,
+      investmentVolumeResult,
+    ] = await Promise.all([
+      // Calculate unique transactions in 24h
+      this.transactionsRepository
+        .createQueryBuilder('transactions')
+        .select('COUNT(DISTINCT transactions.address)', 'count')
+        .where('transactions.sale_address = :sale_address', {
+          sale_address: token.sale_address,
+        })
+        .andWhere('transactions.created_at >= :start_date', {
+          start_date: twentyFourHoursAgo.toDate(),
+        })
+        .getRawOne(),
+      // Calculate min/max transactions per unique address
+
+      this.transactionsRepository
+        .createQueryBuilder('transactions')
+        .select([
+          'MIN(address_counts.transaction_count) as min_transactions',
+          'MAX(address_counts.transaction_count) as max_transactions',
+        ])
+        .from((subQuery) => {
+          return subQuery
+            .addSelect('COUNT(*)', 'transaction_count')
+            .from(Transaction, 'transactions')
+            .where('transactions.created_at >= :start_date', {
+              start_date: twentyFourHoursAgo.toDate(),
+            })
+            .groupBy('transactions.sale_address');
+        }, 'address_counts')
+        .getRawOne(),
+
+      this.transactionsRepository
+        .createQueryBuilder('transactions')
+        .select([
+          'MIN(address_counts.volume) as min_volume',
+          'MAX(address_counts.volume) as max_volume',
+        ])
+        .from((subQuery) => {
+          return subQuery
+            .addSelect(
+              "COALESCE(SUM(CAST(NULLIF(transactions.amount->>'ae', 'NaN') AS DECIMAL)), 0)",
+              'volume',
+            )
+            .from(Transaction, 'transactions')
+            .where('transactions.created_at >= :start_date', {
+              start_date: twentyFourHoursAgo.toDate(),
+            })
+            .groupBy('transactions.sale_address');
+        }, 'address_counts')
+        .getRawOne(),
+
+      this.transactionsRepository
+        .createQueryBuilder('transactions')
+        .select(
+          "COALESCE(SUM(CAST(NULLIF(transactions.amount->>'ae', 'NaN') AS DECIMAL)), 0)",
+          'volume',
+        )
+        .where('transactions.sale_address = :sale_address', {
+          sale_address: token.sale_address,
+        })
+        .andWhere('transactions.created_at >= :start_date', {
+          start_date: twentyFourHoursAgo.toDate(),
+        })
+        .andWhere('transactions.tx_type IN (:...tx_types)', {
+          tx_types: ['buy', 'create_community'],
+        })
+        .getRawOne(),
+    ]);
+
+    // Calculate lifetime minutes (within last 24 hours, max 1440)
+    const tokenCreatedAt = moment(token.created_at);
+    const now = moment();
+    let lifetimeMinutes = Math.min(
+      now.diff(tokenCreatedAt, 'minutes'),
+      TRENDING_SCORE_CONFIG.MAX_LIFETIME_MINUTES,
+    );
+
+    const uniqueTransactions = parseInt(
+      uniqueTransactionsResult?.count || '0',
+      10,
+    );
+    const minUniqueTransactions = parseInt(
+      transactionCountsPerToken?.min_transactions || '0',
+      10,
+    );
+    const maxUniqueTransactions = parseInt(
+      transactionCountsPerToken?.max_transactions || '0',
+      10,
+    );
+    const investmentVolume = parseFloat(investmentVolumeResult.volume || '0');
+    const minInvestmentVolume = parseFloat(volumePerToken?.min_volume || '0');
+    const maxInvestmentVolume = parseFloat(volumePerToken?.max_volume || '0');
+    lifetimeMinutes = Math.max(lifetimeMinutes, 1); // Prevent division by zero
+    const minLifetimeMinutes = 1; // Minimum possible lifetime
+    const maxLifetimeMinutes = TRENDING_SCORE_CONFIG.MAX_LIFETIME_MINUTES;
+
+    const volume_normalization_result =
+      (investmentVolume - minInvestmentVolume) /
+      (maxInvestmentVolume - minInvestmentVolume);
+    const tx_normalization_result =
+      (uniqueTransactions - minUniqueTransactions) /
+      (maxUniqueTransactions - minUniqueTransactions);
+    return {
+      uniqueTransactions,
+      minUniqueTransactions,
+      maxUniqueTransactions,
+      investmentVolume,
+      minInvestmentVolume,
+      maxInvestmentVolume,
+      lifetimeMinutes,
+      minLifetimeMinutes,
+      maxLifetimeMinutes,
+
+      tx_normalization: {
+        formula: `(${uniqueTransactions} - ${minUniqueTransactions}) / (${maxUniqueTransactions} - ${minUniqueTransactions})`,
+        result: tx_normalization_result,
+      },
+      volume_normalization: {
+        formula: `(${investmentVolume} - ${minInvestmentVolume}) / (${maxInvestmentVolume} - ${minInvestmentVolume})`,
+        result: volume_normalization_result,
+      },
+      volume_step_2_normalization: {
+        formula: `(${volume_normalization_result} / ${lifetimeMinutes})`,
+        result: volume_normalization_result / lifetimeMinutes,
+      },
+      trending_score: {
+        formula: `${TRENDING_SCORE_CONFIG.TRANSACTION_WEIGHT} * ${tx_normalization_result} + ${TRENDING_SCORE_CONFIG.VOLUME_WEIGHT} * (${volume_normalization_result} / ${lifetimeMinutes})`,
+        result:
+          TRENDING_SCORE_CONFIG.TRANSACTION_WEIGHT * tx_normalization_result +
+          TRENDING_SCORE_CONFIG.VOLUME_WEIGHT *
+            (volume_normalization_result / lifetimeMinutes),
+      },
+    } as any;
+  }
+
+  /**
+   * Calculate and update trending score for a single token
+   */
+  async updateTokenTrendingScore(token: Token): Promise<{
+    metrics: TrendingMetrics;
+    token: Token;
+  }> {
+    try {
+      const metrics = await this.calculateTokenTrendingMetrics(token);
+
+      // Update the token's trending score in the database
+      await this.tokensRepository.update(token.sale_address, {
+        trending_score: metrics.trending_score.result, // Ensure non-negative
+        trending_score_update_at: new Date(),
+      });
+
+      return {
+        metrics,
+        token: {
+          ...token,
+          trending_score: metrics.trending_score.result,
+          trending_score_update_at: new Date(),
+        },
+      };
+    } catch (error) {
+      this.logger.error(
+        `Failed to update trending score for token ${token.sale_address}`,
+        error,
+        error instanceof Error ? error.stack : undefined,
+      );
+    }
+  }
+
+  /**
+   * Calculate and update trending scores for multiple tokens
+   */
+  async updateMultipleTokensTrendingScores(tokens: Token[]): Promise<void> {
+    const updatePromises = tokens.map((token) =>
+      this.updateTokenTrendingScore(token),
+    );
+    await Promise.allSettled(updatePromises);
   }
 }

@@ -3,7 +3,7 @@ import { Token } from '@/tokens/entities/token.entity';
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import BigNumber from 'bignumber.js';
-import { Moment } from 'moment';
+import moment, { Moment } from 'moment';
 import { DataSource, Repository } from 'typeorm';
 import { HistoricalDataDto } from '../dto/historical-data.dto';
 import { Transaction } from '../entities/transaction.entity';
@@ -373,15 +373,15 @@ export class TransactionHistoryService {
         timeframe: '1 day',
       },
       '7d': {
-        interval: '6 hours',
+        interval: '1 hour',
         unit: 'hour',
-        size: 6,
+        size: 1,
         timeframe: '7 days',
       },
       '30d': {
-        interval: '1 day',
-        unit: 'day',
-        size: 1,
+        interval: '4 hours',
+        unit: 'hour',
+        size: 4,
         timeframe: '30 days',
       },
     };
@@ -410,7 +410,7 @@ export class TransactionHistoryService {
       .getRawMany();
 
     let result;
-    if (data.length === 0) {
+    if (data.length <= 1) {
       // If no transactions found for interval, get latest 4 transactions
       const latestTransactions = await this.transactionsRepository
         .createQueryBuilder('transactions')
@@ -436,6 +436,15 @@ export class TransactionHistoryService {
         end_time: item.truncated_time,
       }));
     }
+
+    // prevent duplicate with same end_time
+    result = result.filter(
+      (item, index) =>
+        index ==
+        result.findIndex((t) =>
+          moment(t.end_time).isSame(moment(item.end_time)),
+        ),
+    );
 
     return {
       result,
