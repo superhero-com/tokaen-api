@@ -23,6 +23,8 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { AffiliationModule } from './affiliation/affiliation.module';
 import { AccountModule } from './account/account.module';
 import { TrendingTagsModule } from './trending-tags/trending-tags.module';
+import { PostModule } from './social/post.module';
+import { DexModule } from './dex/dex.module';
 
 @Module({
   imports: [
@@ -59,6 +61,8 @@ import { TrendingTagsModule } from './trending-tags/trending-tags.module';
     AffiliationModule,
     AccountModule,
     TrendingTagsModule,
+    PostModule,
+    DexModule,
   ],
   controllers: [AppController],
   providers: [AppService],
