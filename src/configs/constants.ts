@@ -81,17 +81,6 @@ export const TX_FUNCTIONS = {
   buy: 'buy',
   sell: 'sell',
   create_community: 'create_community',
-
-  // dex(swap)
-  swap_exact_tokens_for_tokens: 'swap_exact_tokens_for_tokens',
-  swap_tokens_for_exact_tokens: 'swap_tokens_for_exact_tokens',
-  swap_exact_ae_for_tokens: 'swap_exact_ae_for_tokens',
-  swap_exact_tokens_for_ae: 'swap_exact_tokens_for_ae',
-  swap_tokens_for_exact_ae: 'swap_tokens_for_exact_ae',
-  swap_ae_for_exact_tokens: 'swap_ae_for_exact_tokens',
-
-  add_liquidity: 'add_liquidity',
-  add_liquidity_ae: 'add_liquidity_ae',
 } as const;
 
 export const WAIT_TIME_WHEN_REQUEST_FAILED = 3000; // 3 seconds
@@ -110,16 +99,13 @@ export const MAX_RETRIES_FOR_FAILED_TRANSACTIONS = 10;
 
 export const MAX_TOKENS_TO_CHECK_WITHOUT_HOLDERS = 20;
 
-export const SYNCING_ENABLED = false;
-export const LIVE_SYNCING_ENABLED = false;
-export const PERIODIC_SYNCING_ENABLED = false;
-export const UPDATE_TRENDING_TOKENS_ENABLED = false;
-export const PULL_INVITATIONS_ENABLED = false;
-export const PULL_ACCOUNTS_ENABLED = false;
-export const PULL_TRENDING_TAGS_ENABLED = false;
-export const PULL_SOCIAL_POSTS_ENABLED = true;
-export const PULL_DEX_TOKENS_ENABLED = true;
-export const PULL_DEX_PAIRS_ENABLED = true;
+export const SYNCING_ENABLED = true;
+export const LIVE_SYNCING_ENABLED = true;
+export const PERIODIC_SYNCING_ENABLED = true;
+export const UPDATE_TRENDING_TOKENS_ENABLED = true;
+export const PULL_INVITATIONS_ENABLED = true;
+export const PULL_ACCOUNTS_ENABLED = true;
+export const PULL_TRENDING_TAGS_ENABLED = true;
 
 /**
  * API Keys and Security

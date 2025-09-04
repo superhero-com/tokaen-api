@@ -1,4 +1,5 @@
-import { ACTIVE_NETWORK, TX_FUNCTIONS } from '@/configs';
+import { WebSocketService } from '@/ae/websocket.service';
+import { ACTIVE_NETWORK, LIVE_SYNCING_ENABLED, TX_FUNCTIONS } from '@/configs';
 import { TransactionService } from '@/transactions/services/transaction.service';
 import { fetchJson } from '@/utils/common';
 import { ITransaction } from '@/utils/types';
@@ -13,6 +14,7 @@ export class SyncTransactionsService {
   private readonly logger = new Logger(SyncTransactionsService.name);
 
   constructor(
+    private websocketService: WebSocketService,
     private readonly transactionService: TransactionService,
 
     @InjectRepository(FailedTransaction)
@@ -21,10 +23,31 @@ export class SyncTransactionsService {
     //
   }
 
-  async handleLiveTransaction(transaction: ITransaction) {
-    if (Object.values(TX_FUNCTIONS).includes(transaction.tx.function)) {
-      this.transactionService.saveTransaction(transaction, null, true);
+  onModuleInit() {
+    this.setupLiveSync();
+  }
+
+  setupLiveSync() {
+    if (!LIVE_SYNCING_ENABLED) {
+      return;
     }
+    let syncedTransactions = [];
+
+    this.websocketService.subscribeForTransactionsUpdates(
+      (transaction: ITransaction) => {
+        if (Object.values(TX_FUNCTIONS).includes(transaction.tx.function)) {
+          // Prevent duplicate transactions
+          if (!syncedTransactions.includes(transaction.hash)) {
+            syncedTransactions.push(transaction.hash);
+            this.transactionService.saveTransaction(transaction, null, true);
+          }
+        }
+        // Reset synced transactions after 100 transactions
+        if (syncedTransactions.length > 100) {
+          syncedTransactions = [];
+        }
+      },
+    );
   }
 
   async fetchAndSyncTransactions(
