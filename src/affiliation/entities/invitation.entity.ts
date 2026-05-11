@@ -22,7 +22,7 @@ export class Invitation {
   block_height: number;
 
   // amount
-  @Column()
+  @Column({ type: 'float8' })
   amount: number;
 
   @Index()
