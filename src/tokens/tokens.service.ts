@@ -933,43 +933,29 @@ export class TokensService {
         })
         .getRawOne(),
       // Calculate min/max transactions per unique address
+      this.transactionsRepository.query(
+        `SELECT MIN(ac.transaction_count) AS min_transactions,
+                MAX(ac.transaction_count) AS max_transactions
+         FROM (
+           SELECT COUNT(*) AS transaction_count
+           FROM transactions
+           WHERE created_at >= $1
+           GROUP BY sale_address
+         ) ac`,
+        [twentyFourHoursAgo.toDate()],
+      ).then((rows: any[]) => rows[0]),
 
-      this.transactionsRepository
-        .createQueryBuilder('transactions')
-        .select([
-          'MIN(address_counts.transaction_count) as min_transactions',
-          'MAX(address_counts.transaction_count) as max_transactions',
-        ])
-        .from((subQuery) => {
-          return subQuery
-            .addSelect('COUNT(*)', 'transaction_count')
-            .from(Transaction, 'transactions')
-            .where('transactions.created_at >= :start_date', {
-              start_date: twentyFourHoursAgo.toDate(),
-            })
-            .groupBy('transactions.sale_address');
-        }, 'address_counts')
-        .getRawOne(),
-
-      this.transactionsRepository
-        .createQueryBuilder('transactions')
-        .select([
-          'MIN(address_counts.volume) as min_volume',
-          'MAX(address_counts.volume) as max_volume',
-        ])
-        .from((subQuery) => {
-          return subQuery
-            .addSelect(
-              "COALESCE(SUM(CAST(NULLIF(transactions.amount->>'ae', 'NaN') AS DECIMAL)), 0)",
-              'volume',
-            )
-            .from(Transaction, 'transactions')
-            .where('transactions.created_at >= :start_date', {
-              start_date: twentyFourHoursAgo.toDate(),
-            })
-            .groupBy('transactions.sale_address');
-        }, 'address_counts')
-        .getRawOne(),
+      this.transactionsRepository.query(
+        `SELECT MIN(ac.volume) AS min_volume,
+                MAX(ac.volume) AS max_volume
+         FROM (
+           SELECT COALESCE(SUM(CAST(NULLIF(amount->>'ae', 'NaN') AS DECIMAL)), 0) AS volume
+           FROM transactions
+           WHERE created_at >= $1
+           GROUP BY sale_address
+         ) ac`,
+        [twentyFourHoursAgo.toDate()],
+      ).then((rows: any[]) => rows[0]),
 
       this.transactionsRepository
         .createQueryBuilder('transactions')
