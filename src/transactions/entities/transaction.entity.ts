@@ -123,7 +123,6 @@ getMetadataArgsStorage().indices.push(
     // ORDER BY sale_address, created_at DESC without an extra sort step.
     target: Transaction,
     name: 'idx_transactions_saleaddress_createdat',
-    columns: [],
     expression: 'sale_address, created_at DESC',
   } as any,
   {
@@ -131,7 +130,6 @@ getMetadataArgsStorage().indices.push(
     // The partial WHERE clause keeps the index small (only non-null values).
     target: Transaction,
     name: 'idx_transactions_marketcap_ae',
-    columns: [],
     expression: "(market_cap->>'ae')",
     where: "(market_cap->>'ae') IS NOT NULL",
   } as any,
