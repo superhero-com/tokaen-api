@@ -22,7 +22,7 @@ export class TrendingTag {
   })
   description: string;
 
-  @Column()
+  @Column({ type: 'float8', default: 0 })
   score: number;
 
   // platform (x, facebook, github)
