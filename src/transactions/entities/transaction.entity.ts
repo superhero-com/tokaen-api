@@ -7,11 +7,27 @@ import {
   Entity,
   Index,
   PrimaryColumn,
+  getMetadataArgsStorage,
 } from 'typeorm';
 
 @Entity({
   name: 'transactions',
 })
+// Partial composite index used by the LATERAL "latest market cap per token" query.
+@Index('idx_transactions_sale_address_created_at_market_cap_ae', [
+  'sale_address',
+  'created_at',
+], { where: "(market_cap->>'ae') IS NOT NULL" })
+// General-purpose composite index covering the most common filter/sort pattern.
+// Defined via getMetadataArgsStorage (below) so TypeORM preserves the DESC ordering.
+// Composite index supporting queries filtered on verified + block_height.
+@Index('idx_transactions_verified_blockheight_createdat', [
+  'verified',
+  'block_height',
+  'created_at',
+])
+// Named index on created_at — replaces the anonymous field-level @Index().
+@Index('idx_transactions_createdat', ['created_at'])
 export class Transaction {
   @Index()
   @PrimaryColumn()
@@ -90,10 +106,33 @@ export class Transaction {
   })
   market_cap!: IPriceDto; // Market cap data at the time of this transaction
 
-  @Index()
   @CreateDateColumn({
     type: 'timestamp',
     default: () => 'CURRENT_TIMESTAMP(6)',
   })
   public created_at: Date;
 }
+
+// TypeORM's @Index decorator does not expose the `expression` option or per-column
+// ordering (ASC/DESC). The two indexes below use getMetadataArgsStorage() to
+// inject them directly into TypeORM's schema metadata so they are created,
+// compared, and never silently dropped by schema synchronisation.
+getMetadataArgsStorage().indices.push(
+  {
+    // Composite index with created_at DESC so PostgreSQL can serve
+    // ORDER BY sale_address, created_at DESC without an extra sort step.
+    target: Transaction,
+    name: 'idx_transactions_saleaddress_createdat',
+    columns: [],
+    expression: 'sale_address, created_at DESC',
+  } as any,
+  {
+    // Functional index on the extracted 'ae' key of the market_cap JSONB column.
+    // The partial WHERE clause keeps the index small (only non-null values).
+    target: Transaction,
+    name: 'idx_transactions_marketcap_ae',
+    columns: [],
+    expression: "(market_cap->>'ae')",
+    where: "(market_cap->>'ae') IS NOT NULL",
+  } as any,
+);

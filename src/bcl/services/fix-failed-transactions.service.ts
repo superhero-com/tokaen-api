@@ -1,16 +1,18 @@
 import {
   MAX_RETRIES_FOR_FAILED_TRANSACTIONS,
   PERIODIC_SYNCING_ENABLED,
+  RETRY_BASE_DELAY_MS,
+  RETRY_MAX_DELAY_MS,
   TX_FUNCTIONS,
 } from '@/configs';
 import { ACTIVE_NETWORK } from '@/configs/network';
 import { TransactionService } from '@/transactions/services/transaction.service';
-import { fetchJson } from '@/utils/common';
+import { fetchJson, TransientError } from '@/utils/common';
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import camelcaseKeysDeep from 'camelcase-keys-deep';
-import { Repository } from 'typeorm';
+import { IsNull, LessThanOrEqual, Or, Repository } from 'typeorm';
 import { FailedTransaction } from '../entities/failed-transaction.entity';
 import { SyncTransactionsService } from './sync-transactions.service';
 
@@ -39,8 +41,12 @@ export class FixFailedTransactionsService {
     }
     this.fixingFailedTransactions = true;
     try {
+      // Only process transactions that are due: either no next_retry_at (legacy
+      // / non-transient) or whose back-off window has already elapsed.
       const failedTransactions = await this.failedTransactionsRepository.find({
-        where: {},
+        where: {
+          next_retry_at: Or(IsNull(), LessThanOrEqual(new Date())),
+        },
       });
       for (const failedTransaction of failedTransactions) {
         await this.fixFailedTransaction(failedTransaction);
@@ -56,6 +62,16 @@ export class FixFailedTransactionsService {
 
   private async fixFailedTransaction(failedTransaction: FailedTransaction) {
     const { hash, retries } = failedTransaction;
+
+    if (retries > MAX_RETRIES_FOR_FAILED_TRANSACTIONS) {
+      // Give up — remove so it doesn't linger forever.
+      this.logger.warn(
+        `FixFailedTransactionsService: giving up on ${hash} after ${retries} retries`,
+      );
+      await this.failedTransactionsRepository.delete(hash);
+      return;
+    }
+
     const url = `${ACTIVE_NETWORK.middlewareUrl}/v3/transactions/${hash}`;
     try {
       const transaction = await fetchJson(url).then((res) =>
@@ -65,9 +81,6 @@ export class FixFailedTransactionsService {
         await this.failedTransactionsRepository.delete(failedTransaction.hash);
         return;
       }
-      if (failedTransaction?.retries > MAX_RETRIES_FOR_FAILED_TRANSACTIONS) {
-        return;
-      }
       await this.transactionService.saveTransaction(transaction);
       await this.failedTransactionsRepository.delete(failedTransaction.hash);
       // at this point we can re-sync the community transactions
@@ -75,12 +88,26 @@ export class FixFailedTransactionsService {
         await this.syncCommunityTransactions(transaction.tx.contractId);
       }
     } catch (error: any) {
+      const isTransient = TransientError.is(error);
+      const newRetries = retries + 1;
+      const delayMs = Math.min(
+        RETRY_BASE_DELAY_MS * Math.pow(2, newRetries),
+        RETRY_MAX_DELAY_MS,
+      );
+      const next_retry_at = isTransient
+        ? new Date(Date.now() + delayMs)
+        : null;
+
       this.logger.error(
-        `FixFailedTransactionsService: ${hash} - ${error.message}`,
+        `FixFailedTransactionsService: ${hash} - ${error.message} [transient=${isTransient}, retry #${newRetries}, next=${next_retry_at?.toISOString() ?? 'immediate'}]`,
         error.stack,
       );
-      await this.failedTransactionsRepository.update(failedTransaction.hash, {
-        retries: retries + 1,
+      await this.failedTransactionsRepository.update(hash, {
+        retries: newRetries,
+        is_transient: isTransient,
+        next_retry_at,
+        error: error.message,
+        error_trace: error.stack ?? '',
       });
     }
   }

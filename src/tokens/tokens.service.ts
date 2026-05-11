@@ -6,7 +6,7 @@ import { In, IsNull, Repository } from 'typeorm';
 import { AePricingService } from '@/ae-pricing/ae-pricing.service';
 import { AeSdkService } from '@/ae/ae-sdk.service';
 import { CommunityFactoryService } from '@/ae/community-factory.service';
-import { ACTIVE_NETWORK, TRENDING_SCORE_CONFIG } from '@/configs';
+import { ACTIVE_NETWORK, BALANCES_GAS_LIMIT, TRENDING_SCORE_CONFIG } from '@/configs';
 import { fetchJson } from '@/utils/common';
 import { ITransaction } from '@/utils/types';
 import { Encoded } from '@aeternity/aepp-sdk';
@@ -308,6 +308,19 @@ export class TokensService {
       const contractInfo = await fetchJson(
         `${ACTIVE_NETWORK.middlewareUrl}/v2/contracts/${token.sale_address}`,
       );
+
+      if (!contractInfo?.source_tx_hash) {
+        this.logger.error(
+          `updateTokenFactoryAddress->error:: retry ${totalRetries + 1}/${maxRetries}`,
+          { reason: 'missing source_tx_hash', contractInfo },
+        );
+        totalRetries++;
+        if (totalRetries < maxRetries) {
+          await new Promise((resolve) => setTimeout(resolve, retryDelay));
+        }
+        continue;
+      }
+
       const response = await fetchJson(
         `${ACTIVE_NETWORK.middlewareUrl}/v3/transactions/${contractInfo.source_tx_hash}`,
       );
@@ -323,8 +336,7 @@ export class TokensService {
 
       this.logger.error(
         `updateTokenFactoryAddress->error:: retry ${totalRetries + 1}/${maxRetries}`,
-        response,
-        contractInfo,
+        { reason: 'missing contract_id in tx response', response, contractInfo },
       );
 
       totalRetries++;
@@ -492,21 +504,11 @@ export class TokensService {
     orderBy: string = 'rank',
     orderDirection: 'ASC' | 'DESC' = 'ASC',
   ) {
-    // Get the base query and parameters
-    const subQuery = queryBuilder.getQuery();
-    const parameters = queryBuilder.getParameters();
-
-    // Replace all parameter placeholders with actual values
-    let finalSubQuery = subQuery;
-    Object.entries(parameters).forEach(([key, value]) => {
-      if (Array.isArray(value)) {
-        // Handle array parameters by joining them with commas and wrapping in quotes
-        const arrayValues = value.map((v) => `'${v}'`).join(',');
-        finalSubQuery = finalSubQuery.replace(`:...${key}`, arrayValues);
-      } else {
-        finalSubQuery = finalSubQuery.replace(`:${key}`, `'${value}'`);
-      }
-    });
+    // getQueryAndParameters() returns the SQL with $1/$2/... placeholders and
+    // the values array — letting the pg driver handle all escaping instead of
+    // doing manual string substitution (which broke on values like "0.01" or
+    // any string containing a single quote).
+    const [subQuery, subQueryParams] = queryBuilder.getQueryAndParameters();
 
     if (orderBy === 'market_cap') {
       orderBy = 'rank';
@@ -514,19 +516,24 @@ export class TokensService {
       orderDirection = orderDirection === 'ASC' ? 'DESC' : 'ASC';
     }
 
-    // Get total count of filtered items
+    // Count query reuses the same subquery + params.
     const countQuery = `
       WITH filtered_tokens AS (
-        ${finalSubQuery}
+        ${subQuery}
       )
       SELECT COUNT(*) as total
       FROM filtered_tokens
     `;
-    const [{ total }] = await this.tokensRepository.query(countQuery);
+    const [{ total }] = await this.tokensRepository.query(
+      countQuery,
+      subQueryParams,
+    );
     const totalItems = parseInt(total, 10);
     const totalPages = Math.ceil(totalItems / limit);
 
-    // Create a new query that includes the rank
+    // Ranked query: LIMIT and OFFSET are appended as extra bound parameters
+    // so they are also handled safely by the driver.
+    const p = subQueryParams.length;
     const rankedQuery = `
       WITH all_ranked_tokens AS (
         SELECT 
@@ -541,17 +548,21 @@ export class TokensService {
         WHERE unlisted = false
       ),
       filtered_tokens AS (
-        ${finalSubQuery}
+        ${subQuery}
       )
       SELECT all_ranked_tokens.*
       FROM all_ranked_tokens
       INNER JOIN filtered_tokens ON all_ranked_tokens.sale_address = filtered_tokens.sale_address
       ORDER BY all_ranked_tokens.${orderBy} ${orderDirection}
-      LIMIT ${limit}
-      OFFSET ${(page - 1) * limit}
+      LIMIT $${p + 1}
+      OFFSET $${p + 2}
     `;
 
-    const result = await this.tokensRepository.query(rankedQuery);
+    const result = await this.tokensRepository.query(rankedQuery, [
+      ...subQueryParams,
+      limit,
+      (page - 1) * limit,
+    ]);
 
     return {
       items: result,
@@ -570,6 +581,8 @@ export class TokensService {
       return new Map();
     }
     const factory = await this.communityFactoryService.getCurrentFactory();
+    // Parameters: $1 = factory_address, $2..$N = tokenIds
+    const idPlaceholders = tokenIds.map((_, i) => `$${i + 2}`).join(',');
     const rankedQuery = `
       WITH ranked_tokens AS (
         SELECT 
@@ -581,13 +594,16 @@ export class TokensService {
               t.created_at ASC
           ) AS INTEGER) as rank
         FROM token t
-        WHERE t.factory_address = '${factory.address}'
+        WHERE t.factory_address = $1
         AND t.unlisted = false
       )
-      SELECT * FROM ranked_tokens WHERE sale_address IN (${tokenIds.join(',')})
+      SELECT * FROM ranked_tokens WHERE sale_address IN (${idPlaceholders})
     `;
 
-    const result = await this.tokensRepository.query(rankedQuery);
+    const result = await this.tokensRepository.query(rankedQuery, [
+      factory.address,
+      ...tokenIds,
+    ]);
     return new Map(result.map((token) => [token.sale_address, token.rank]));
   }
 
@@ -598,6 +614,8 @@ export class TokensService {
       return new Map();
     }
     const factory = await this.communityFactoryService.getCurrentFactory();
+    // Parameters: $1 = factory_address, $2..$N = aex9Addresses
+    const addrPlaceholders = aex9Addresses.map((_, i) => `$${i + 2}`).join(',');
     const rankedQuery = `
       WITH ranked_tokens AS (
         SELECT 
@@ -609,13 +627,16 @@ export class TokensService {
               t.created_at ASC
           ) AS INTEGER) as rank
         FROM token t
-        WHERE t.factory_address = '${factory.address}'
+        WHERE t.factory_address = $1
         AND t.unlisted = false
       )
-      SELECT * FROM ranked_tokens WHERE address IN ('${aex9Addresses.join("','")}')
+      SELECT * FROM ranked_tokens WHERE address IN (${addrPlaceholders})
     `;
 
-    const result = await this.tokensRepository.query(rankedQuery);
+    const result = await this.tokensRepository.query(rankedQuery, [
+      factory.address,
+      ...aex9Addresses,
+    ]);
     return new Map(result.map((token) => [token.address, token.rank]));
   }
 
@@ -741,12 +762,40 @@ export class TokensService {
     const aex9Address =
       token?.address || (await this.getTokenAex9Address(token));
 
-    const totalHolders = await this._loadHoldersData(token, aex9Address);
+    const rawHolders = await this._loadHoldersData(token, aex9Address);
+
+    // De-duplicate by id (can happen when the MDW pagination returns the same
+    // account in multiple pages) and filter out any entries whose id is
+    // indeterminate (undefined account_id from the MDW response).
+    const seenIds = new Set<string>();
+    const totalHolders = rawHolders.filter((h) => {
+      if (!h.id || h.id.startsWith('undefined_')) {
+        this.logger.warn(
+          `loadAndSaveTokenHoldersFromMdw->skipping holder with invalid id`,
+          h,
+        );
+        return false;
+      }
+      if (seenIds.has(h.id)) {
+        return false;
+      }
+      seenIds.add(h.id);
+      return true;
+    });
+
     if (totalHolders.length > 0) {
       await this.tokenHoldersRepository.delete({
         aex9_address: aex9Address,
       });
-      await this.tokenHoldersRepository.insert(totalHolders);
+      // Use orIgnore to guard against any remaining duplicates that could
+      // arise from concurrent invocations racing on the same aex9_address.
+      await this.tokenHoldersRepository
+        .createQueryBuilder()
+        .insert()
+        .into(this.tokenHoldersRepository.target)
+        .values(totalHolders)
+        .orIgnore()
+        .execute();
     }
     await this.tokensRepository.update(token.sale_address, {
       holders_count: totalHolders.length,
@@ -833,7 +882,9 @@ export class TokensService {
         await this.getTokenContractsBySaleAddress(
           token.sale_address as Encoded.ContractAddress,
         );
-      const holderBalances = await tokenContractInstance.balances();
+      const holderBalances = await tokenContractInstance.balances({
+        gasLimit: BALANCES_GAS_LIMIT,
+      });
       const holders = Array.from(holderBalances.decodedResult)
         .map(([key, value]: any) => ({
           id: `${key}_${aex9Address}`,
