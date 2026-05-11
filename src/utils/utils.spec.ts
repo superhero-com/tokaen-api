@@ -58,7 +58,7 @@ describe('fetchJson', () => {
   });
 
   it('should throw an error if fetch fails', async () => {
-    (global.fetch as jest.Mock).mockRejectedValue(new Error('Network Error'));
+    (global.fetch as jest.Mock).mockRejectedValue(new Error('ECONNREFUSED'));
 
     // shouldNotRetry=true to skip the retry loop; after exhausting retries the
     // low-level network error is re-wrapped as TransientError.
@@ -191,6 +191,8 @@ describe('TransientError', () => {
     it('returns false for unrelated errors', () => {
       expect(TransientError.is(new Error('Not Found'))).toBe(false);
       expect(TransientError.is(new Error('Unauthorized'))).toBe(false);
+      expect(TransientError.is(new Error('Invalid networkId'))).toBe(false);
+      expect(TransientError.is(new Error('Unsupported network configuration'))).toBe(false);
       expect(TransientError.is(null)).toBe(false);
       expect(TransientError.is('string')).toBe(false);
     });

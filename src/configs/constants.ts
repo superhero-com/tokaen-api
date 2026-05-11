@@ -94,7 +94,10 @@ export const MAX_RETRIES_WHEN_REQUEST_FAILED = 10;
  *   retries 2 → 20 min
  *   retries 3 → 40 min
  *   retries 4 → 80 min
- *   retries 5+ → 120 min (cap)
+ *   retries 5 → 160 min
+ *   retries 6 → 320 min
+ *   retries 7 → 640 min
+ *   retries 8+ → 1440 min / 24 h (cap)
  */
 export const RETRY_BASE_DELAY_MS = 5 * 60 * 1000; // 5 minutes
 export const RETRY_MAX_DELAY_MS = 24 * 60 * 60 * 1000; // 24 hours
