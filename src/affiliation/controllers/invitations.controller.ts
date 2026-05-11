@@ -38,10 +38,11 @@ export class InvitationsController {
     @Query('order_by') orderBy: string = 'amount',
     @Query('order_direction') orderDirection: 'ASC' | 'DESC' = 'DESC',
   ) {
+    const ALLOWED_ORDER_BY = new Set(['amount', 'created_at']);
+    const safeOrderBy = ALLOWED_ORDER_BY.has(orderBy) ? orderBy : 'amount';
+    const safeDirection: 'ASC' | 'DESC' = orderDirection === 'ASC' ? 'ASC' : 'DESC';
     const query = this.invitationRepository.createQueryBuilder('invitation');
-    if (orderBy) {
-      query.orderBy(`invitation.${orderBy}`, orderDirection);
-    }
+    query.orderBy(`invitation.${safeOrderBy}`, safeDirection);
     // left join account and map as nested account object
     query.leftJoinAndMapOne(
       'invitation.invitee',

@@ -49,10 +49,21 @@ export class AccountsController {
     @Query('order_by') orderBy: string = 'total_volume',
     @Query('order_direction') orderDirection: 'ASC' | 'DESC' = 'DESC',
   ) {
+    const ALLOWED_ORDER_BY = new Set([
+      'total_volume',
+      'total_tx_count',
+      'total_buy_tx_count',
+      'total_sell_tx_count',
+      'total_created_tokens',
+      'total_invitation_count',
+      'total_claimed_invitation_count',
+      'total_revoked_invitation_count',
+      'created_at',
+    ]);
+    const safeOrderBy = ALLOWED_ORDER_BY.has(orderBy) ? orderBy : 'total_volume';
+    const safeDirection: 'ASC' | 'DESC' = orderDirection === 'ASC' ? 'ASC' : 'DESC';
     const query = this.accountRepository.createQueryBuilder('account');
-    if (orderBy) {
-      query.orderBy(`account.${orderBy}`, orderDirection);
-    }
+    query.orderBy(`account.${safeOrderBy}`, safeDirection);
     return paginate(query, { page, limit });
   }
 

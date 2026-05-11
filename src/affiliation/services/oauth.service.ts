@@ -50,8 +50,6 @@ export class OAuthService {
         },
       );
 
-      console.log('github token response:', tokenResponse);
-
       if (!tokenResponse || !tokenResponse.access_token) {
         throw new BadRequestException('Invalid GitHub authorization code');
       }
@@ -66,8 +64,6 @@ export class OAuthService {
           'User-Agent': 'tokaen-api',
         },
       });
-
-      console.log('github user response:', response);
 
       if (!response || !response.id) {
         throw new BadRequestException('Failed to get GitHub user info');

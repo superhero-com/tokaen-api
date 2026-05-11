@@ -56,10 +56,11 @@ export class TrendingTagsController {
     @Query('order_direction') orderDirection: 'ASC' | 'DESC' = 'DESC',
     @Query('search') search: string = '',
   ) {
+    const ALLOWED_ORDER_BY = new Set(['score', 'source', 'created_at']);
+    const safeOrderBy = ALLOWED_ORDER_BY.has(orderBy) ? orderBy : 'score';
+    const safeDirection: 'ASC' | 'DESC' = orderDirection === 'ASC' ? 'ASC' : 'DESC';
     const query = this.trendingTagRepository.createQueryBuilder('trending_tag');
-    if (orderBy) {
-      query.orderBy(`trending_tag.${orderBy}`, orderDirection);
-    }
+    query.orderBy(`trending_tag.${safeOrderBy}`, safeDirection);
     if (search) {
       query.where('trending_tag.tag ILIKE :search', {
         search: `%${search}%`,
