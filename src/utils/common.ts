@@ -72,17 +72,18 @@ export async function fetchJson<T = any>(
     }
     return response.json() as Promise<T>;
   } catch (error) {
-    // Re-wrap low-level network errors as TransientError so callers get a
-    // consistent type without having to pattern-match on string messages.
-    if (!(error instanceof TransientError) && TransientError.is(error)) {
-      throw new TransientError((error as Error).message);
-    }
     if (totalRetries < MAX_RETRIES_WHEN_REQUEST_FAILED && !shouldNotRetry) {
       totalRetries++;
       await new Promise((resolve) =>
         setTimeout(resolve, WAIT_TIME_WHEN_REQUEST_FAILED),
       );
       return fetchJson(url, options, shouldNotRetry, totalRetries);
+    }
+    // After all retries exhausted, re-wrap low-level network errors as
+    // TransientError so callers get a consistent type without having to
+    // pattern-match on string messages.
+    if (!(error instanceof TransientError) && TransientError.is(error)) {
+      throw new TransientError((error as Error).message);
     }
     throw error;
   }

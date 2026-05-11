@@ -60,9 +60,11 @@ describe('fetchJson', () => {
   it('should throw an error if fetch fails', async () => {
     (global.fetch as jest.Mock).mockRejectedValue(new Error('Network Error'));
 
-    await expect(fetchJson('https://api.example.com/error')).rejects.toThrow(
-      'Network Error',
-    );
+    // shouldNotRetry=true to skip the retry loop; after exhausting retries the
+    // low-level network error is re-wrapped as TransientError.
+    await expect(
+      fetchJson('https://api.example.com/error', undefined, true),
+    ).rejects.toThrow(TransientError);
     expect(global.fetch).toHaveBeenCalledWith(
       'https://api.example.com/error',
       undefined,
