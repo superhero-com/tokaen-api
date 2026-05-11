@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { ValidationPipe } from '@nestjs/common';
 import { join } from 'path';
 import { AppModule } from './app.module';
 import { DEBUG_ENABLED } from './configs';
@@ -14,11 +15,12 @@ async function bootstrap() {
 
   app.enableCors();
   app.setGlobalPrefix('api');
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
 
   const config = new DocumentBuilder()
     .setTitle('WORD CRAFT Scan')
     .setDescription('The WORD CRAFT Scan API')
-    .setVersion('1.0')
+    .setVersion('1.0.4')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
