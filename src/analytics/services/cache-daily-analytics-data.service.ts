@@ -147,24 +147,33 @@ export class CacheDailyAnalyticsDataService {
 
   private async getMarketCapSum(date: Date) {
     const $date = moment(date);
-    const smartTransactionQuery = this.transactionsRepository
-      .createQueryBuilder('transaction')
-      .select(
-        'DISTINCT ON (transaction.sale_address) transaction.sale_address',
-        'sale_address',
-      )
-      .addSelect("transaction.market_cap->>'ae'", 'market_cap')
-      .where("transaction.market_cap->>'ae' IS NOT NULL")
-      .andWhere('transaction.created_at <= :start_date', {
-        start_date: $date.toDate(),
-      })
-      .orderBy('transaction.sale_address')
-      .addOrderBy('transaction.created_at', 'DESC');
-    const smartTokens = await smartTransactionQuery.getRawMany();
+    // Use a LATERAL join so PostgreSQL can do one index seek per distinct
+    // sale_address (using the partial index on (sale_address, created_at)
+    // WHERE market_cap->>'ae' IS NOT NULL) instead of a full index scan.
+    const sql = `
+      SELECT s.sale_address, l.market_cap_ae
+      FROM (
+        SELECT DISTINCT sale_address
+        FROM transactions
+        WHERE (market_cap->>'ae') IS NOT NULL
+          AND created_at <= $1
+      ) s
+      CROSS JOIN LATERAL (
+        SELECT market_cap->>'ae' AS market_cap_ae
+        FROM transactions t
+        WHERE t.sale_address = s.sale_address
+          AND (t.market_cap->>'ae') IS NOT NULL
+          AND t.created_at <= $1
+        ORDER BY t.created_at DESC
+        LIMIT 1
+      ) l
+    `;
+    const smartTokens: { sale_address: string; market_cap_ae: string }[] =
+      await this.transactionsRepository.query(sql, [$date.toDate()]);
 
     // Calculate total market cap sum
     return smartTokens.reduce((sum, token) => {
-      const marketCap = parseFloat(token.market_cap);
+      const marketCap = parseFloat(token.market_cap_ae);
       return sum + (isNaN(marketCap) ? 0 : marketCap);
     }, 0);
   }

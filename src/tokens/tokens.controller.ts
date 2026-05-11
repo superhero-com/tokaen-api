@@ -142,6 +142,20 @@ export class TokensController {
 
       // queryBuilder.andWhereInIds(ownedTokens);
 
+      if (ownedTokens.length === 0) {
+        // Owner holds no tokens — return an empty page immediately.
+        return {
+          items: [],
+          meta: {
+            currentPage: page,
+            itemCount: 0,
+            itemsPerPage: limit,
+            totalItems: 0,
+            totalPages: 0,
+          },
+        };
+      }
+
       queryBuilder.andWhere('token.address IN (:...aex9_addresses)', {
         aex9_addresses: ownedTokens,
       });
