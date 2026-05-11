@@ -32,7 +32,6 @@ export class TransientError extends Error {
       msg.includes('econnrefused') ||
       msg.includes('econnreset') ||
       msg.includes('etimedout') ||
-      msg.includes('network') ||
       msg.includes('socket hang up') ||
       msg.includes('fetch failed')
     );

@@ -91,7 +91,7 @@ export class FixFailedTransactionsService {
       const isTransient = TransientError.is(error);
       const newRetries = retries + 1;
       const delayMs = Math.min(
-        RETRY_BASE_DELAY_MS * Math.pow(2, newRetries),
+        RETRY_BASE_DELAY_MS * Math.pow(2, retries),
         RETRY_MAX_DELAY_MS,
       );
       const next_retry_at = isTransient
