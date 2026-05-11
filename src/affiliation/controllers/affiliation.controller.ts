@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Param, Get, Render } from '@nestjs/common';
+import { Controller, Post, Body, Param, Get, Render, BadRequestException, NotFoundException, ConflictException } from '@nestjs/common';
 import { ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -55,7 +55,7 @@ export class AffiliationController {
     });
     if (claimedCode) {
       if (claimedCode?.claimed_at) {
-        throw new Error('User already claimed a code');
+        throw new ConflictException('User already claimed a code');
       }
       // delete the claimed code
       await this.affiliationCodeRepository.delete(claimedCode.id);
@@ -68,7 +68,7 @@ export class AffiliationController {
     });
 
     if (!affiliation) {
-      throw new Error('Affiliation not found');
+      throw new NotFoundException('Affiliation not found');
     }
 
     // Check if there are any non-claimed codes available
@@ -76,7 +76,7 @@ export class AffiliationController {
       affiliation.codes?.filter((c) => !c.claimed_at) || [];
 
     if (availableCodes.length === 0) {
-      throw new Error('No available codes for this affiliation');
+      throw new BadRequestException('No available codes for this affiliation');
     }
 
     // shuffle availableCodes and pick one
