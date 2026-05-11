@@ -23,6 +23,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { AffiliationModule } from './affiliation/affiliation.module';
 import { AccountModule } from './account/account.module';
 import { TrendingTagsModule } from './trending-tags/trending-tags.module';
+import { ExpressionIndexService } from './utils/expression-index.service';
 
 @Module({
   imports: [
@@ -61,6 +62,6 @@ import { TrendingTagsModule } from './trending-tags/trending-tags.module';
     TrendingTagsModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, ExpressionIndexService],
 })
 export class AppModule {}

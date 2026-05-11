@@ -7,7 +7,6 @@ import {
   Entity,
   Index,
   PrimaryColumn,
-  getMetadataArgsStorage,
 } from 'typeorm';
 
 @Entity({
@@ -113,24 +112,6 @@ export class Transaction {
   public created_at: Date;
 }
 
-// TypeORM's @Index decorator does not expose the `expression` option or per-column
-// ordering (ASC/DESC). The two indexes below use getMetadataArgsStorage() to
-// inject them directly into TypeORM's schema metadata so they are created,
-// compared, and never silently dropped by schema synchronisation.
-getMetadataArgsStorage().indices.push(
-  {
-    // Composite index with created_at DESC so PostgreSQL can serve
-    // ORDER BY sale_address, created_at DESC without an extra sort step.
-    target: Transaction,
-    name: 'idx_transactions_saleaddress_createdat',
-    expression: 'sale_address, created_at DESC',
-  } as any,
-  {
-    // Functional index on the extracted 'ae' key of the market_cap JSONB column.
-    // The partial WHERE clause keeps the index small (only non-null values).
-    target: Transaction,
-    name: 'idx_transactions_marketcap_ae',
-    expression: "(market_cap->>'ae')",
-    where: "(market_cap->>'ae') IS NOT NULL",
-  } as any,
-);
+// Expression indexes (composite with DESC, JSONB extraction) cannot be created by
+// TypeORM's schema-sync because TableIndex.create() drops the `expression` field.
+// They are created at startup by ExpressionIndexService via CREATE INDEX IF NOT EXISTS.

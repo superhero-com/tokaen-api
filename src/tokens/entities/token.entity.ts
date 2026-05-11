@@ -6,7 +6,6 @@ import {
   Entity,
   Index,
   PrimaryColumn,
-  getMetadataArgsStorage,
 } from 'typeorm';
 import { IPriceDto } from '../dto/price.dto';
 
@@ -180,30 +179,7 @@ export class Token {
   public created_at: Date;
 }
 
-// Expression indexes for the rank window function:
-//   ORDER BY CASE WHEN market_cap = 0 THEN 1 ELSE 0 END, market_cap DESC, created_at ASC
-//
-// Two variants because the two callers use different WHERE clauses:
-//   - queryTokensWithRanks: WHERE unlisted = false  (all factories)
-//   - getTokenRanks:        WHERE factory_address = '...' AND unlisted = false
-//
-// TypeORM's @Index decorator cannot express computed columns or per-column DESC/ASC
-// mixed ordering, so we inject via getMetadataArgsStorage directly.
-getMetadataArgsStorage().indices.push(
-  {
-    // Used by queryTokensWithRanks — ranks all non-unlisted tokens.
-    target: Token,
-    name: 'idx_token_rank_sort_unlisted',
-    expression:
-      "(CASE WHEN market_cap = 0 THEN 1 ELSE 0 END), market_cap DESC, created_at ASC",
-    where: 'unlisted = false',
-  } as any,
-  {
-    // Used by getTokenRanks — ranks tokens for a specific factory only.
-    target: Token,
-    name: 'idx_token_rank_sort_factory',
-    expression:
-      "(CASE WHEN market_cap = 0 THEN 1 ELSE 0 END), market_cap DESC, created_at ASC",
-    where: 'factory_address IS NOT NULL AND unlisted = false',
-  } as any,
-);
+// Expression indexes for the rank window function are created at startup by
+// ExpressionIndexService via CREATE INDEX IF NOT EXISTS.
+// TypeORM's TableIndex.create() drops the `expression` field, so schema-sync
+// cannot handle them — they would generate CREATE INDEX ... () which crashes PostgreSQL.
