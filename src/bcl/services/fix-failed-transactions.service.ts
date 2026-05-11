@@ -41,12 +41,16 @@ export class FixFailedTransactionsService {
     }
     this.fixingFailedTransactions = true;
     try {
-      // Only process transactions that are due: either no next_retry_at (legacy
-      // / non-transient) or whose back-off window has already elapsed.
+      // Process in batches to avoid loading millions of rows into memory.
+      // Each cron run handles at most BATCH_SIZE records; the next run picks up
+      // where this one left off (records still due will reappear).
+      const BATCH_SIZE = 100;
       const failedTransactions = await this.failedTransactionsRepository.find({
         where: {
           next_retry_at: Or(IsNull(), LessThanOrEqual(new Date())),
         },
+        order: { next_retry_at: 'ASC' },
+        take: BATCH_SIZE,
       });
       for (const failedTransaction of failedTransactions) {
         await this.fixFailedTransaction(failedTransaction);
