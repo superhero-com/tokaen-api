@@ -15,7 +15,7 @@ on:
         required: false
         type: string
 jobs:
-  deploy_wordcraft:
+  deploy_wordcraft_mainnet:
     name: wordcraft
     uses: ./.github/workflows/ssh_deploy.yaml
     with:
@@ -23,6 +23,25 @@ jobs:
       CONTAINER_NAME: "develop-wordcraftfun-api-mainnet"
     secrets:
       AE_NETWORK_ID: "ae_mainnet"
+      API_HOST_PORT: "3043"
+      DB_DATABASE: "api"
+      DEPLOY_HOST: "api.dev.wordcraft.fun"
+      DEPLOY_KEY: ${{ secrets.DEV_DEPLOY_KEY }}
+      DEPLOY_USERNAME: ${{ secrets.DEV_DEPLOY_USERNAME }}
+      DB_USER: ${{ secrets.DEV_DB_USER }}
+      DB_PASSWORD: ${{ secrets.DEV_DB_PASSWORD }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      DOCKERHUB_REPO: ${{ secrets.DOCKERHUB_REPO }}
+      TRENDING_TAGS_API_KEY: ${{ secrets.DEV_TRENDING_TAGS_API_KEY }}
+  deploy_wordcraft_testnet:
+    name: wordcraft
+    uses: ./.github/workflows/ssh_deploy.yaml
+    with:
+      VERSION: ${{ inputs.VERSION }}
+      CONTAINER_NAME: "develop-wordcraftfun-api-testnet"
+    secrets:
+      AE_NETWORK_ID: "ae_uat"
       API_HOST_PORT: "3043"
       DB_DATABASE: "api"
       DEPLOY_HOST: "api.dev.wordcraft.fun"
