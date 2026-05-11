@@ -1,7 +1,12 @@
 import { WebSocketService } from '@/ae/websocket.service';
-import { ACTIVE_NETWORK, LIVE_SYNCING_ENABLED, TX_FUNCTIONS } from '@/configs';
+import {
+  ACTIVE_NETWORK,
+  LIVE_SYNCING_ENABLED,
+  RETRY_BASE_DELAY_MS,
+  TX_FUNCTIONS,
+} from '@/configs';
 import { TransactionService } from '@/transactions/services/transaction.service';
-import { fetchJson } from '@/utils/common';
+import { fetchJson, TransientError } from '@/utils/common';
 import { ITransaction } from '@/utils/types';
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -96,14 +101,21 @@ export class SyncTransactionsService {
               validated_hashes.push(transaction.hash);
             }
           } catch (error: any) {
+            const isTransient = TransientError.is(error);
             this.logger.error(
-              `Failed to save transaction ${transaction.hash}`,
+              `Failed to save transaction ${transaction.hash} [transient=${isTransient}]`,
               error.stack,
             );
             await this.failedTransactionsRepository.save({
               hash: transaction.hash,
               error: error.message,
-              error_trace: error.stack,
+              error_trace: error.stack ?? '',
+              is_transient: isTransient,
+              // Give a short initial back-off for transient failures so the
+              // retry runner doesn't immediately re-hit an overloaded service.
+              next_retry_at: isTransient
+                ? new Date(Date.now() + RETRY_BASE_DELAY_MS)
+                : null,
             });
           }
         }

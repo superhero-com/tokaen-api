@@ -10,6 +10,8 @@ import { TokenHolder } from './entities/token-holders.entity';
 import { paginate } from 'nestjs-typeorm-paginate';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Reflector } from '@nestjs/core';
+import { getQueueToken } from '@nestjs/bull';
+import { SYNC_TOKEN_HOLDERS_QUEUE } from './queues/constants';
 
 jest.mock('nestjs-typeorm-paginate', () => ({
   paginate: jest.fn().mockResolvedValue({ items: [], meta: {} }),
@@ -70,6 +72,10 @@ describe('TokensController', () => {
           useValue: tokenHolderRepositoryMock,
         },
         {
+          provide: getQueueToken(SYNC_TOKEN_HOLDERS_QUEUE),
+          useValue: { add: jest.fn() },
+        },
+        {
           provide: TokensService,
           useValue: {
             getToken: jest.fn().mockResolvedValue({
@@ -85,6 +91,9 @@ describe('TokensController', () => {
               total_supply: { toNumber: () => 1000000 },
               factory_address: 'ct_123',
             }),
+            queryTokensWithRanks: jest
+              .fn()
+              .mockResolvedValue({ items: [], meta: {} }),
           },
         },
         {
@@ -115,8 +124,50 @@ describe('TokensController', () => {
 
   it('should return paginated list of tokens', async () => {
     const result = await controller.listAll();
-    expect(paginate).toHaveBeenCalled();
+    expect(tokensService.queryTokensWithRanks).toHaveBeenCalled();
     expect(result).toEqual({ items: [], meta: {} });
+  });
+
+  it('should return an empty page immediately when owner has no token holdings', async () => {
+    // getRawMany returns [] → owner holds nothing
+    const result = await controller.listAll(
+      undefined,
+      undefined,
+      undefined,
+      'ak_owner',
+    );
+    expect(result).toEqual({
+      items: [],
+      meta: {
+        currentPage: 1,
+        itemCount: 0,
+        itemsPerPage: 100,
+        totalItems: 0,
+        totalPages: 0,
+      },
+    });
+    // queryTokensWithRanks must NOT be called — we return early
+    expect(tokensService.queryTokensWithRanks).not.toHaveBeenCalled();
+  });
+
+  it('should filter by owned token addresses when owner has holdings', async () => {
+    // Simulate the tokenHolder repo returning two addresses
+    (tokenHolderRepository.createQueryBuilder as jest.Mock).mockReturnValue({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      distinct: jest.fn().mockReturnThis(),
+      getRawMany: jest
+        .fn()
+        .mockResolvedValue([
+          { aex9_address: 'ct_aaa' },
+          { aex9_address: 'ct_bbb' },
+        ]),
+    });
+
+    await controller.listAll(undefined, undefined, undefined, 'ak_owner');
+    expect(tokensService.queryTokensWithRanks).toHaveBeenCalled();
   });
 
   it('should return token details by address', async () => {

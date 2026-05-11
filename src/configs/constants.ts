@@ -83,8 +83,27 @@ export const TX_FUNCTIONS = {
   create_community: 'create_community',
 } as const;
 
-export const WAIT_TIME_WHEN_REQUEST_FAILED = 3000; // 3 seconds
-export const MAX_RETRIES_WHEN_REQUEST_FAILED = 3;
+export const WAIT_TIME_WHEN_REQUEST_FAILED = 10000; // 10 seconds
+export const MAX_RETRIES_WHEN_REQUEST_FAILED = 10;
+
+/**
+ * Exponential back-off for failed transactions that hit a transient error.
+ * next_retry_at = now + min(RETRY_BASE_DELAY_MS * 2^retries, RETRY_MAX_DELAY_MS)
+ *   retries 0 →  5 min
+ *   retries 1 → 10 min
+ *   retries 2 → 20 min
+ *   retries 3 → 40 min
+ *   retries 4 → 80 min
+ *   retries 5+ → 120 min (cap)
+ */
+export const RETRY_BASE_DELAY_MS = 5 * 60 * 1000; // 5 minutes
+export const RETRY_MAX_DELAY_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+/**
+ * Gas limit for dry-run calls that iterate over all token holders.
+ * The default SDK limit (~6M) is too low for tokens with many holders.
+ */
+export const BALANCES_GAS_LIMIT = 1_000_000_000;
 
 /**
  * sync config
