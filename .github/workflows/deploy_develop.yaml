@@ -42,7 +42,7 @@ jobs:
       CONTAINER_NAME: "develop-wordcraftfun-api-testnet"
     secrets:
       AE_NETWORK_ID: "ae_uat"
-      API_HOST_PORT: "3043"
+      API_HOST_PORT: "3040"
       DB_DATABASE: "api"
       DEPLOY_HOST: "api.dev.wordcraft.fun"
       DEPLOY_KEY: ${{ secrets.DEV_DEPLOY_KEY }}
