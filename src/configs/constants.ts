@@ -103,12 +103,6 @@ export const RETRY_BASE_DELAY_MS = 5 * 60 * 1000; // 5 minutes
 export const RETRY_MAX_DELAY_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 /**
- * Gas limit for dry-run calls that iterate over all token holders.
- * The default SDK limit (~6M) is too low for tokens with many holders.
- */
-export const BALANCES_GAS_LIMIT = 1_000_000_000;
-
-/**
  * sync config
  */
 export const TOTAL_BLOCKS_TO_SYNC_EVERY_MINUTE = 10;

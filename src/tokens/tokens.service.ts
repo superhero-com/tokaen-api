@@ -6,7 +6,7 @@ import { In, IsNull, Repository } from 'typeorm';
 import { AePricingService } from '@/ae-pricing/ae-pricing.service';
 import { AeSdkService } from '@/ae/ae-sdk.service';
 import { CommunityFactoryService } from '@/ae/community-factory.service';
-import { ACTIVE_NETWORK, BALANCES_GAS_LIMIT, TRENDING_SCORE_CONFIG } from '@/configs';
+import { ACTIVE_NETWORK, TRENDING_SCORE_CONFIG } from '@/configs';
 import { fetchJson } from '@/utils/common';
 import { ITransaction } from '@/utils/types';
 import { Encoded } from '@aeternity/aepp-sdk';
@@ -882,9 +882,7 @@ export class TokensService {
         await this.getTokenContractsBySaleAddress(
           token.sale_address as Encoded.ContractAddress,
         );
-      const holderBalances = await tokenContractInstance.balances({
-        gasLimit: BALANCES_GAS_LIMIT,
-      });
+      const holderBalances = await tokenContractInstance.balances();
       const holders = Array.from(holderBalances.decodedResult)
         .map(([key, value]: any) => ({
           id: `${key}_${aex9Address}`,
