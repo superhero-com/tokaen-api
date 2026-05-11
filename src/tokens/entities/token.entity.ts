@@ -194,7 +194,6 @@ getMetadataArgsStorage().indices.push(
     // Used by queryTokensWithRanks — ranks all non-unlisted tokens.
     target: Token,
     name: 'idx_token_rank_sort_unlisted',
-    columns: [],
     expression:
       "(CASE WHEN market_cap = 0 THEN 1 ELSE 0 END), market_cap DESC, created_at ASC",
     where: 'unlisted = false',
@@ -203,7 +202,6 @@ getMetadataArgsStorage().indices.push(
     // Used by getTokenRanks — ranks tokens for a specific factory only.
     target: Token,
     name: 'idx_token_rank_sort_factory',
-    columns: [],
     expression:
       "(CASE WHEN market_cap = 0 THEN 1 ELSE 0 END), market_cap DESC, created_at ASC",
     where: 'factory_address IS NOT NULL AND unlisted = false',
